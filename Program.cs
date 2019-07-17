@@ -5,12 +5,15 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Diagnostics;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 
 namespace SkyrimTogetherWatchdog
 {
     class Program
     {
         private static Timer watchdog;
+        private static int port;
 
         static void Main(string[] args)
         {
@@ -19,6 +22,8 @@ namespace SkyrimTogetherWatchdog
             watchdog.AutoReset = true;
             watchdog.Interval = 10000;
             watchdog.Start();
+
+            port = 10578;
 
             Console.WriteLine("Watchdog started. Starting server.");
 
@@ -42,21 +47,31 @@ namespace SkyrimTogetherWatchdog
         private static void Watchdog_Elapsed(object sender, ElapsedEventArgs e)
         {
             bool NeedsRestart = false;
-            Process[] processes = Process.GetProcessesByName("Server");
 
-            if (processes.Count() > 0)
+            //Process[] processes = Process.GetProcessesByName("Server");
+
+            //if (processes.Count() > 0)
+            //{
+            /*foreach (Process process in processes)
             {
-                foreach (Process process in processes)
+                if (!process.Responding || process.HasExited)
                 {
-                    if (!process.Responding || process.HasExited)
-                    {
-                        process.Kill();
-                        NeedsRestart = true;
-                    }
+                    process.Kill();
+                    NeedsRestart = true;
                 }
-            }
-            else
+            }*/
+
+            var properties = IPGlobalProperties.GetIPGlobalProperties();
+            var connections = properties.GetActiveUdpListeners();
+            List<int> ports = new List<int>();
+
+            foreach (var connx in connections)
+                ports.Add(connx.Port);
+
+            if (!ports.Contains(port))
                 NeedsRestart = true;
+            else
+                Console.WriteLine("Watchdog verified that the server is still listening on port " + port);
 
             if (NeedsRestart)
             {
