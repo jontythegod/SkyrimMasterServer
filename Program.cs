@@ -47,20 +47,6 @@ namespace SkyrimTogetherWatchdog
         private static void Watchdog_Elapsed(object sender, ElapsedEventArgs e)
         {
             bool NeedsRestart = false;
-
-            //Process[] processes = Process.GetProcessesByName("Server");
-
-            //if (processes.Count() > 0)
-            //{
-            /*foreach (Process process in processes)
-            {
-                if (!process.Responding || process.HasExited)
-                {
-                    process.Kill();
-                    NeedsRestart = true;
-                }
-            }*/
-
             var properties = IPGlobalProperties.GetIPGlobalProperties();
             var connections = properties.GetActiveUdpListeners();
             List<int> ports = new List<int>();
@@ -70,8 +56,6 @@ namespace SkyrimTogetherWatchdog
 
             if (!ports.Contains(port))
                 NeedsRestart = true;
-            else
-                Console.WriteLine("Watchdog verified that the server is still listening on port " + port);
 
             if (NeedsRestart)
             {
