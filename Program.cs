@@ -1,13 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Timers;
 using System.Diagnostics;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.IO;
+using System.Linq;
+using System.Net.NetworkInformation;
+using System.Timers;
 
 namespace SkyrimTogetherWatchdog
 {
