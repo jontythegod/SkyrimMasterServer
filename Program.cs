@@ -7,69 +7,99 @@ using System.Timers;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.IO;
 
 namespace SkyrimTogetherWatchdog
 {
     class Program
     {
         private static Timer watchdog;
-        private static int port;
+        private static Dictionary<string, int> servers;
 
         static void Main(string[] args)
         {
+            servers = new Dictionary<string, int>();
+
+            List<string> files = Directory.GetFiles(Environment.CurrentDirectory + @"\cfg").Select(Path.GetFileName).ToList();
+            foreach (string file in files)
+            {
+                string line = string.Empty;
+
+                using (var stream = new StreamReader(Environment.CurrentDirectory + @"\cfg\" + file))
+                {
+                    while ((line = stream.ReadLine()) != null)
+                    {
+                        if (line.Length < 1 || line.StartsWith("#"))
+                        {
+                            continue;
+                        }
+
+                        string[] split = line.Split(';');
+                        int port = Convert.ToInt32(split[0]);
+                        string name = split[1];
+                        servers.Add(name, port);
+                    }
+                }
+            }
+
+            if (servers.Count == 0)
+            {
+                Console.WriteLine("You have no configured servers.");
+                Console.ReadKey();
+                Environment.Exit(0);
+            }
+
+            foreach (KeyValuePair<string, int> pair in servers)
+                StartServer(pair.Key, pair.Value);
+
             watchdog = new Timer();
             watchdog.Elapsed += Watchdog_Elapsed;
             watchdog.AutoReset = true;
             watchdog.Interval = 10000;
             watchdog.Start();
 
-            port = 10578;
-
-            Console.WriteLine("Watchdog started. Starting server.");
-
-            var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = Environment.CurrentDirectory + @"\RunServer.bat"
-                }
-            };
-
-            process.Start();
-
-            if (process.Responding)
-                Console.WriteLine("Server has been started successfully.");
-
             while (true)
             { }
         }
 
-        private static void Watchdog_Elapsed(object sender, ElapsedEventArgs e)
+        private static bool IsListening(int Port)
         {
-            bool NeedsRestart = false;
             var properties = IPGlobalProperties.GetIPGlobalProperties();
             var connections = properties.GetActiveUdpListeners();
             List<int> ports = new List<int>();
 
             foreach (var connx in connections)
-                ports.Add(connx.Port);
+                if (connx.Port == Port)
+                    return true;
 
-            if (!ports.Contains(port))
-                NeedsRestart = true;
+            return false;
+        }
 
-            if (NeedsRestart)
+        private static void StartServer(string Name, int Port)
+        {
+            var Process = new Process
             {
-                var process = new Process
+                StartInfo = new ProcessStartInfo
                 {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = Environment.CurrentDirectory + @"\RunServer.bat"
-                    }
-                };
+                    FileName = Environment.CurrentDirectory + @"\Server.exe",
+                    Arguments = "-name \"" + Name + "\" -port " + Port + "",
+                }
+            };
 
-                process.Start();
+            Process.Start();
 
-                Console.WriteLine("Server crashed or was not responding. Process killed. Server restarted.");
+            Console.WriteLine("Started server \"" + Name + "\" on port " + Port + ".");
+        }
+
+        private static void Watchdog_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            foreach (KeyValuePair<string, int> server in servers)
+            {
+                if (!IsListening(server.Value))
+                {
+                    StartServer(server.Key, server.Value);
+                    Console.WriteLine("Restarted server due to crash: \"" + server.Key + "\" on port " + server.Value + ".");
+                }
             }
         }
     }
