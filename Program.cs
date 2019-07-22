@@ -1,103 +1,99 @@
-﻿using System;
+﻿using log4net;
+using log4net.Config;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
+using System.Net;
 using System.Net.NetworkInformation;
 using System.Timers;
 
-namespace SkyrimTogetherWatchdog
+namespace SkyrimMasterServer
 {
-    class Program
+    internal class MasterServer
     {
-        private static Timer watchdog;
-        private static Dictionary<string, int> servers;
+        private static readonly ILog Log = LogManager.GetLogger(typeof(MasterServer));
+        private static IDatabase Database;
+        private static Dictionary<string, string> Config;
 
-        static void Main(string[] args)
+        private static Timer Watchdog;
+        private static Dictionary<string, int> Servers;
+
+        private static void Main()
         {
-            servers = new Dictionary<string, int>();
+            BasicConfigurator.Configure();
+            Log.Info("log4net started");
 
-            List<string> files = Directory.GetFiles(Environment.CurrentDirectory + @"\cfg").Select(Path.GetFileName).ToList();
-            foreach (string file in files)
+            Config = new Dictionary<string, string>();
+            try
             {
-                string line = string.Empty;
-
-                using (var stream = new StreamReader(Environment.CurrentDirectory + @"\cfg\" + file))
+                using (StreamReader streamReader = new StreamReader(Environment.CurrentDirectory + @"\config\MasterServer.ini"))
                 {
-                    while ((line = stream.ReadLine()) != null)
+                    string line = string.Empty;
+                    while ((line = streamReader.ReadLine()) != null)
                     {
-                        if (line.Length < 1 || line.StartsWith("#"))
+                        if (line.Length >= 1 && !line.StartsWith("#"))
                         {
-                            continue;
-                        }
+                            int num = line.IndexOf('=');
 
-                        string[] split = line.Split(';');
-                        int port = Convert.ToInt32(split[0]);
-                        string name = split[1];
-                        servers.Add(name, port);
+                            if (num != -1)
+                                Config.Add(line.Substring(0, num), line.Substring(num + 1));
+                        }
                     }
+
+                    Log.Info("config loaded");
                 }
             }
-
-            if (servers.Count == 0)
+            catch (Exception ex)
             {
-                Console.WriteLine("You have no configured servers.");
+                Log.Error(ex.ToString());
+            }
+
+            Database = new IDatabase(Config["database.host"], Config["database.port"], Config["database.username"], Config["database.password"], Config["database.dbname"]);
+
+            if (Database.RunQuickNoResult("SELECT 1+1"))
+            {
+                Log.Info("database connected");
+            }
+            else
+            {
+                Log.Error("database not connected, edit config and restart server");
                 Console.ReadKey();
                 Environment.Exit(0);
             }
 
-            foreach (KeyValuePair<string, int> pair in servers)
-                StartServer(pair.Key, pair.Value);
-
-            watchdog = new Timer();
-            watchdog.Elapsed += Watchdog_Elapsed;
-            watchdog.AutoReset = true;
-            watchdog.Interval = 10000;
-            watchdog.Start();
-
-            while (true)
-            { }
+            while (true) { }
         }
 
         private static bool IsListening(int Port)
         {
-            var properties = IPGlobalProperties.GetIPGlobalProperties();
-            var connections = properties.GetActiveUdpListeners();
-            List<int> ports = new List<int>();
+            IPGlobalProperties Properties = IPGlobalProperties.GetIPGlobalProperties();
+            IPEndPoint[] Listeners = Properties.GetActiveUdpListeners();
 
-            foreach (var connx in connections)
-                if (connx.Port == Port)
+            foreach (IPEndPoint endpoint in Listeners)
+            {
+                if (endpoint.Port == Port)
                     return true;
+            }
 
             return false;
         }
 
         private static void StartServer(string Name, int Port)
         {
-            var Process = new Process
+            Process Process = new Process();
+            Process.StartInfo = new ProcessStartInfo
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = Environment.CurrentDirectory + @"\Server.exe",
-                    Arguments = "-name \"" + Name + "\" -port " + Port + "",
-                }
+                FileName = Environment.CurrentDirectory + @"\Server.exe",
+                Arguments = "-name \"" + Name + "\" -port " + Port
             };
 
             Process.Start();
-
             Console.WriteLine("Started server \"" + Name + "\" on port " + Port + ".");
         }
 
         private static void Watchdog_Elapsed(object sender, ElapsedEventArgs e)
         {
-            foreach (KeyValuePair<string, int> server in servers)
-            {
-                if (!IsListening(server.Value))
-                {
-                    StartServer(server.Key, server.Value);
-                    Console.WriteLine("Restarted server due to crash: \"" + server.Key + "\" on port " + server.Value + ".");
-                }
-            }
         }
     }
 }
